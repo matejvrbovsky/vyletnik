@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Odjezdy — turistický plánovač</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#14181F; --ink-s:#4B5160; --paper:#F7F5F0; --paper-d:#EDE9DD;
+  --card:#fff; --amber:#FFB100; --amber-d:#FFE3A3;
+  --green:#2E7D5B; --green-b:#E4F1EA;
+  --blue:#2B4C7E; --blue-b:#E5EBF4;
+  --wait:#9C8B5E; --red:#C44536; --red-b:#FBE7E3;
+  --line:#DDD7C8; --r:12px;
+  --pw:330px;
+  --fd:'Space Grotesk',sans-serif;
+  --fb:'Inter',sans-serif;
+  --fm:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;background:#1a1f2a;font-family:var(--fb);overscroll-behavior:none;touch-action:manipulation;}
+#map{position:fixed;inset:0;}
+.maplibregl-ctrl-bottom-left{display:none!important;}
+.maplibregl-ctrl-attrib{font-size:9px!important;}
+
+.map-switcher{position:fixed;top:10px;right:50px;z-index:10;background:rgba(0,0,0,0.75);border-radius:8px;padding:4px;display:flex;gap:2px;}
+.map-switcher button{background:transparent;border:none;color:#ccc;font-size:12px;font-weight:600;padding:6px 10px;border-radius:6px;cursor:pointer;font-family:var(--fb);}
+.map-switcher button.active{background:var(--amber);color:#000;}
+
+.loc-btn{position:fixed;top:14px;right:14px;background:var(--ink);color:var(--amber);border:none;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;}
+
+.panel{position:fixed;left:0;top:0;bottom:0;width:var(--pw);background:var(--card);display:flex;flex-direction:column;z-index:20;box-shadow:4px 0 28px rgba(0,0,0,.28);transition:transform .28s cubic-bezier(.4,0,.2,1);}
+.panel.off{transform:translateX(calc(-1 * var(--pw)));}
+.ptab{position:fixed;left:var(--pw);top:50%;transform:translateY(-50%);z-index:21;transition:left .28s cubic-bezier(.4,0,.2,1);}
+.panel.off~.ptab{left:0;}
+.ptab button{width:24px;height:64px;border:none;border-radius:0 10px 10px 0;background:var(--ink);color:var(--amber);font-size:13px;cursor:pointer;box-shadow:4px 0 14px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;}
+
+.phead{background:var(--ink);padding:13px 14px 11px;border-bottom:3px solid var(--amber);flex:none;}
+.phead-row{display:flex;align-items:baseline;justify-content:space-between;}
+.ptitle{font-family:var(--fd);font-weight:700;font-size:19px;color:var(--paper);letter-spacing:.4px;}
+.ptitle em{color:var(--amber);font-style:normal;}
+.pclock{font-family:var(--fm);font-size:12px;color:var(--amber-d);}
+.psub{font-size:11px;color:#9AA0AE;margin-top:3px;}
+
+.pbody{flex:1;overflow-y:auto;padding:12px 12px 20px;overscroll-behavior:contain;}
+
+.search-box{position:relative; display:flex; gap:6px; margin-bottom:8px;}
+.search-box input{flex:1; padding:7px 8px; border:1.5px solid var(--line); border-radius:8px; font-family:var(--fb); font-size:12px; background:var(--paper);}
+.search-box button{padding:7px 12px; background:var(--ink); color:var(--amber); border:none; border-radius:8px; font-weight:700; font-family:var(--fd); cursor:pointer;}
+
+.search-sugg{
+  position:absolute; top:100%; left:0; right:0;
+  background:var(--card); border:1.5px solid var(--line); border-top:none;
+  border-radius:0 0 8px 8px; max-height:200px; overflow-y:auto;
+  z-index:60; box-shadow:0 6px 14px rgba(20,24,31,.15);
+}
+.search-sugg button{
+  display:block; width:100%; text-align:left; padding:8px 10px;
+  border:none; background:none; font-family:var(--fb); font-size:12.5px;
+  color:var(--ink); cursor:pointer; border-bottom:1px solid var(--paper-d);
+}
+.search-sugg button:last-child{border-bottom:none;}
+.search-sugg button:hover,.search-sugg button:focus-visible{background:var(--paper-d);}
+.sugg-dist{font-size:10px; color:var(--ink-s); margin-left:4px;}
+
+.speed-cfg{display:flex;gap:10px;margin:8px 0;font-size:11px;align-items:center;}
+.speed-cfg label{font-weight:600;color:var(--ink-s);}
+.speed-cfg input{width:60px;padding:4px;border:1px solid var(--line);border-radius:6px;font-family:var(--fb);font-size:11px;text-align:center;}
+
+.wp-rail{display:flex;flex-direction:column;}
+.wp-row{display:flex;align-items:flex-start;gap:9px;position:relative;cursor:grab;user-select:none;}
+.wp-row:active{cursor:grabbing;}
+.wp-row.drag-over{border-top:2px dashed var(--blue);}
+.wp-row:not(.wp-last)::after{content:'';position:absolute;left:13px;top:30px;bottom:-4px;width:2px;background:var(--line);}
+.wp-dot{width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-family:var(--fm);font-size:11px;font-weight:700;color:#fff;position:relative;z-index:1;margin-top:9px;}
+.dot-s{background:var(--green);}
+.dot-m{background:var(--blue);}
+.dot-e{background:var(--red);}
+
+.wp-field{flex:1;min-width:0;padding:4px 0 10px;position:relative;}
+.wp-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-s);font-weight:600;margin-bottom:3px;}
+.wp-inp-wrap{position:relative;}
+.wp-inp{width:100%;padding:8px 28px 8px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:var(--fb);font-size:13px;background:var(--paper);color:var(--ink);}
+.wp-inp:focus{outline:2px solid var(--blue);border-color:var(--blue);}
+.wp-del{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:20px;height:20px;border-radius:50%;border:none;background:none;color:var(--ink-s);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.wp-del:hover{background:var(--red-b);color:var(--red);}
+
+.wp-chk{position:absolute;left:-24px;top:14px;width:18px;height:18px;accent-color:var(--blue);cursor:pointer;z-index:2;}
+
+.seg-mode-row{display:flex;align-items:center;gap:4px;margin-left:35px;margin-bottom:6px;}
+.seg-mode-btn{background:var(--paper);border:1.5px solid var(--line);border-radius:50%;width:32px;height:32px;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.15s;padding:0;}
+.seg-mode-btn.active{background:var(--ink);border-color:var(--ink);color:var(--amber);box-shadow:0 0 0 2px var(--amber);}
+.seg-speed-inp{width:52px;padding:4px 2px;border:1px solid var(--line);border-radius:6px;font-size:11px;text-align:center;background:var(--card);font-family:var(--fb);}
+.seg-speed-inp:disabled{opacity:0.5;}
+
+.bulk-bar{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin:6px 0;display:none;align-items:center;gap:8px;font-size:12px;}
+.bulk-bar button{padding:4px 10px;border:none;border-radius:6px;background:var(--ink);color:var(--amber);font-weight:700;cursor:pointer;font-family:var(--fd);font-size:12px;}
+.bulk-bar input{width:60px;text-align:center;}
+
+.add-btn{display:flex;align-items:center;gap:6px;margin:2px 0 12px 35px;border:1.5px dashed var(--line);border-radius:8px;background:none;padding:6px 11px;color:var(--ink-s);font-size:12.5px;cursor:pointer;font-family:var(--fb);}
+.add-btn:hover{border-color:var(--blue);color:var(--blue);}
+
+.opts{display:flex;gap:7px;margin-bottom:10px;}
+.opt-f{flex:1;min-width:0;}
+.opt-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-s);font-weight:600;margin-bottom:3px;}
+.opt-inp{width:100%;padding:7px 8px;border:1.5px solid var(--line);border-radius:8px;font-family:var(--fb);font-size:12.5px;background:var(--paper);color:var(--ink);}
+.opt-inp:focus{outline:2px solid var(--blue);border-color:var(--blue);}
+.tgl{display:flex;border:1.5px solid var(--line);border-radius:8px;overflow:hidden;}
+.tgl button{flex:1;padding:7px 5px;border:none;background:var(--paper);font-family:var(--fb);font-size:11.5px;font-weight:600;color:var(--ink-s);cursor:pointer;}
+.tgl button.on{background:var(--ink);color:var(--amber-d);}
+
+.plan-btn{width:100%;padding:11px;border:none;border-radius:9px;background:var(--ink);color:var(--amber);font-family:var(--fd);font-weight:700;font-size:14px;letter-spacing:.3px;cursor:pointer;margin-bottom:7px;}
+.plan-btn:hover{background:#23293A;}
+.plan-btn:disabled{opacity:.5;cursor:wait;}
+
+.status{font-size:11.5px;color:var(--ink-s);min-height:15px;margin-bottom:6px;}
+.status.err{color:var(--red);font-weight:600;}
+
+/* Results */
+.r-head{font-family:var(--fd);font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-s);margin:8px 0 7px;}
+.sum-card{background:var(--paper);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px;}
+.sum-times{font-family:var(--fm);font-size:16px;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.sum-times .arr{color:var(--ink-s);font-size:12px;}
+.pbar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--paper-d);margin-bottom:5px;}
+.pb-walk{background:var(--green);}
+.pb-transit{background:var(--blue);}
+.pb-wait{background:var(--wait);opacity:.55;}
+.pb-dwell{background:var(--amber);opacity:.7;}
+.legend{display:flex;gap:9px;font-size:10.5px;color:var(--ink-s);flex-wrap:wrap;}
+.legend span{display:inline-flex;align-items:center;gap:3px;}
+.legend i{width:7px;height:7px;border-radius:2px;display:inline-block;}
+.li-w{background:var(--green);}
+.li-t{background:var(--blue);}
+.li-wt{background:var(--wait);opacity:.6;}
+.li-dw{background:var(--amber);opacity:.8;}
+
+.fav-btn{display:inline-flex;align-items:center;gap:5px;margin-top:8px;border:1.5px solid var(--line);border-radius:999px;background:none;padding:4px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-s);}
+.fav-btn.on{border-color:var(--amber);color:#7A5800;background:var(--amber-d);}
+
+.seg-card{background:var(--card);border:1.5px solid var(--line);border-radius:10px;margin-bottom:7px;overflow:hidden;}
+.seg-hd{width:100%;text-align:left;border:none;background:none;cursor:pointer;padding:8px 11px;display:flex;align-items:center;gap:8px;}
+.seg-hd:hover{background:var(--paper);}
+.seg-card.open .seg-hd{background:var(--paper-d);}
+.seg-num{width:22px;height:22px;border-radius:50%;background:var(--ink);color:var(--amber-d);font-family:var(--fm);font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;}
+.seg-info{flex:1;min-width:0;}
+.seg-rt{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
+.seg-tm{font-family:var(--fm);font-size:11px;color:var(--ink-s);text-align:left;}
+.seg-badge{font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;white-space:nowrap;}
+.sb-alert{background:var(--red-b);color:var(--red);}
+.sb-delay{background:#FFF3CD;color:#7A5200;}
+
+.seg-body{display:none;border-top:1px solid var(--paper-d);padding:6px 11px 10px;}
+.seg-card.open .seg-body{display:block;}
+
+.leg{display:flex;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line);}
+.leg:last-child{border-bottom:none;}
+.leg-icon{width:24px;height:24px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;background:var(--paper-d);margin-top:1px;}
+.leg.lw .leg-icon{background:var(--green-b);}
+.leg.lt .leg-icon{background:var(--blue-b);}
+.leg-main{flex:1;min-width:0;}
+.leg-tt{font-size:12px;font-weight:600;display:flex;justify-content:space-between;gap:4px;}
+.leg-times{font-family:var(--fm);font-size:11px;color:var(--ink-s);margin-top:2px;}
+.leg-dist{font-size:11px;color:var(--ink-s);margin-top:1px;font-weight:500;}
+.leg-sub{font-size:11px;color:var(--ink-s);margin-top:1px;}
+.leg-bdg{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;}
+.brt{font-size:10px;background:var(--green-b);color:var(--green);padding:1px 5px;border-radius:999px;font-weight:600;}
+.bdl{font-size:10px;background:var(--red-b);color:var(--red);padding:1px 5px;border-radius:999px;font-weight:700;}
+.alert-box{margin-top:4px;background:var(--red-b);color:#7A2A20;border-left:3px solid var(--red);border-radius:5px;padding:5px 7px;font-size:11px;}
+.alert-box b{display:block;margin-bottom:1px;}
+
+.leg.transfer .leg-icon{background:var(--paper-d);}
+.leg.transfer .leg-tt{font-size:11px;color:var(--ink-s);}
+.leg.transfer .leg-sub{font-size:10px;}
+
+/* Favorites */
+.fv-head{font-family:var(--fd);font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-s);margin:14px 0 6px;}
+.fv-chip{display:flex;align-items:center;gap:6px;background:var(--paper);border:1.5px solid var(--line);border-radius:9px;padding:7px 9px;margin-bottom:5px;cursor:pointer;font-size:12px;}
+.fv-chip:hover{border-color:var(--blue);}
+.fv-star{color:var(--amber);}
+.fv-del{margin-left:auto;background:none;border:none;color:var(--ink-s);cursor:pointer;font-size:13px;padding:2px 4px;}
+
+.mhint{position:fixed;bottom:22px;left:calc(var(--pw) + 14px);background:rgba(20,24,31,.85);color:#fff;font-size:12.5px;padding:8px 14px;border-radius:999px;pointer-events:none;z-index:15;transition:opacity .2s,left .28s;backdrop-filter:blur(4px);}
+.panel.off~.ptab~.mhint{left:14px;}
+
+.clear-btn{position:fixed;top:14px;left:calc(var(--pw) + 14px);background:var(--ink);color:var(--amber);border:none;border-radius:999px;padding:8px 15px;font-family:var(--fd);font-weight:700;font-size:12px;cursor:pointer;z-index:15;box-shadow:0 2px 10px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .2s,left .28s;}
+.clear-btn.show{opacity:1;pointer-events:auto;}
+.panel.off~.ptab~.clear-btn{left:14px;}
+
+.pfooter{padding:7px 12px 12px;font-size:9.5px;color:#AAACB0;border-top:1px solid var(--paper-d);line-height:1.6;flex:none;}
+.pfooter a{color:#AAACB0;}
+
+.empty{text-align:center;padding:18px 8px;color:var(--ink-s);font-size:12px;}
+.empty .big{font-size:28px;display:block;margin-bottom:5px;}
+
+@media(max-width:640px){
+  :root{--pw:100vw;}
+  .panel{top:auto;left:0;right:0;width:100%;max-height:65vh;border-radius:16px 16px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.22);}
+  .panel.off{transform:translateY(calc(100% - 56px));}
+  .ptab{left:auto!important;right:14px;top:auto;bottom:calc(65vh + 8px);transform:none;}
+  .panel.off~.ptab{top:auto;bottom:66px;left:auto!important;right:14px;}
+  .ptab button{width:42px;height:42px;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,.28);}
+  .mhint{left:12px!important;bottom:calc(65vh + 10px);}
+  .panel.off~.ptab~.mhint{bottom:70px;}
+  .clear-btn{left:12px!important;top:12px;}
+}
+</style>
+</head>
+<body>
+
+<div class="map-switcher" id="map-switcher">
+  <button data-style="topo" class="active">🏔️ Turistická</button>
+  <button data-style="osm">🗺️ Základní</button>
+  <button data-style="liberty">🌐 Light</button>
+</div>
+
+<button class="loc-btn" id="loc-btn" title="Použít moji polohu">📍</button>
+
+<div id="map" aria-label="Mapa"></div>
+
+<div class="panel" id="panel">
+  <div class="phead">
+    <div class="phead-row">
+      <span class="ptitle">ODJEZDY<em>.</em></span>
+      <span class="pclock" id="clock">--:--</span>
+    </div>
+    <div class="psub">Klikej do mapy · vyhledávej · přetahuj body · přepínej módy</div>
+  </div>
+
+  <div class="pbody" id="pbody">
+    <div class="search-box" id="search-box-wrap">
+      <input type="text" id="search-input" placeholder="🔍 Hledat místo na mapě…" autocomplete="off" />
+      <button id="search-btn">Hledat</button>
+      <div class="search-sugg" id="search-sugg" hidden></div>
+    </div>
+
+    <div class="speed-cfg">
+      <label>🚶‍♂️ Rychlost chůze (km/h):</label>
+      <input type="number" id="walkSpeed" value="5" min="1" max="15" step="0.5">
+      <label>🚲 Rychlost kolo (km/h):</label>
+      <input type="number" id="bikeSpeed" value="15" min="5" max="40" step="1">
+    </div>
+
+    <div class="wp-rail" id="wp-rail"></div>
+
+    <div class="bulk-bar" id="bulk-bar">
+      <span>Vybrané body:</span>
+      <button id="bulk-dwell-btn">Nastavit zdržení</button>
+      <button id="bulk-mode-walk">🚶‍♂️</button>
+      <button id="bulk-mode-transit">🚌</button>
+      <button id="bulk-mode-bike">🚲</button>
+    </div>
+
+    <button type="button" class="add-btn" id="add-btn">＋ Přidat zastávku</button>
+
+    <div class="opts">
+      <div class="opt-f">
+        <div class="opt-lbl">Datum a čas</div>
+        <input type="datetime-local" class="opt-inp" id="when"/>
+      </div>
+      <div class="opt-f">
+        <div class="opt-lbl">Typ</div>
+        <div class="tgl" role="group">
+          <button type="button" id="tdep" class="on">Odjezd v</button>
+          <button type="button" id="tarr">Příjezd do</button>
+        </div>
+      </div>
+    </div>
+
+    <button type="button" class="plan-btn" id="plan-btn">🗺 Naplánovat trasu</button>
+    <p class="status" id="st" role="status"></p>
+
+    <div id="results"></div>
+    <div id="favs"></div>
+  </div>
+
+  <div class="pfooter">
+    Mapa: <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> /
+    <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a> ·
+    Data: <a href="https://transitous.org" target="_blank">Transitous/MOTIS</a>
+  </div>
+</div>
+
+<div class="ptab" id="ptab"><button id="ptoggle">◀</button></div>
+<div class="mhint" id="mhint">Klikni do mapy pro přidání bodu</div>
+<button class="clear-btn" id="clear-btn">✕ Smazat trasu</button>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+'use strict';
+
+const API='https://api.transitous.org';
+const MAX_WP=8;
+const OSRM_SERVERS = [
+  'https://routing.openstreetmap.de/routed-foot/route/v1',
+  'https://router.project-osrm.org/route/v1'
+];
+
+const MAP_STYLES = {
+  topo: {
+    style: {
+      version: 8,
+      sources: {
+        'opentopomap': {
+          type: 'raster',
+          tiles: [
+            'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+            'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+            'https://c.tile.opentopomap.org/{z}/{x}/{y}.png'
+          ],
+          tileSize: 256,
+          maxzoom: 17
+        }
+      },
+      layers: [
+        {
+          id: 'opentopomap-layer',
+          type: 'raster',
+          source: 'opentopomap',
+          minzoom: 0,
+          maxzoom: 22,
+          paint: {
+            'raster-resampling': 'linear'
+          }
+        }
+      ]
+    }
+  },
+  osm: { style: 'https://tiles.openfreemap.org/styles/liberty' },
+  liberty: { style: 'https://tiles.openfreemap.org/styles/osm-bright' }
+};
+let currentMapStyle = 'topo';
+
+/* ─── STATE ─── */
+let wps=[];
+let segModes=[];
+let wpIdCnt=0;
+let mkrs={};
+let map=null;
+let arriveBy=false;
+let segs=[];
+let rtLayers=new Set();
+let geoAbort=null;
+let planning=false;
+let walkSpeed=5, bikeSpeed=15;
+let tempMarker = null, tempMarkerData = null;
+let dragSrcIdx = -1;
+let userPos = null;
+
+/* ─── STORAGE ─── */
+async function sg(k,fb){try{const r=localStorage.getItem(k);return r?JSON.parse(r):fb;}catch{return fb;}}
+async function ss(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+
+/* ─── UTILS ─── */
+const dbc=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
+const esc=t=>{if(t==null)return '';return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');};
+const fmtT=iso=>{try{return new Date(iso).toLocaleTimeString('cs-CZ',{hour:'2-digit',minute:'2-digit'});}catch{return '--:--';}};
+const fmtM=m=>{m=Math.max(0,Math.round(m));if(m<60)return m+' min';const h=Math.floor(m/60),r=m%60;return h+' h'+(r?' '+r+' min':'');};
+const minBetween=(a,b)=>(new Date(b)-new Date(a))/60000;
+const isWalk=m=>m==='WALK';
+const isBike=m=>m==='BICYCLE';
+const setStatus=(msg,err)=>{const e=document.getElementById('st');e.textContent=msg||'';e.classList.toggle('err',!!err);};
+
+const toISOWithOffset = (d) => {
+  const pad = (n) => String(n).padStart(2,'0');
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const absOff = Math.abs(off);
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' +
+         pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) +
+         sign + pad(Math.floor(absOff/60)) + ':' + pad(absOff%60);
+};
+const iso = (v) => { if(!v) return null; const d = new Date(v); if(isNaN(d)) return null; return toISOWithOffset(d); };
+
+async function fetchJson(url,opts={}){
+  const r=await fetch(url,opts);
+  if(!r.ok){ let msg=`HTTP ${r.status}`; try{const b=await r.json();if(b?.message)msg=b.message;}catch{} throw new Error(msg); }
+  const txt=await r.text();
+  try{return JSON.parse(txt);}catch{throw new Error("Chyba zpracování dat serveru.");}
+}
+
+const MI={
+  WALK:{i:'🚶',l:'Chůze'},BIKE:{i:'🚲',l:'Kolo'},
+  TRAM:{i:'🚊',l:'Tramvaj'},SUBWAY:{i:'🚇',l:'Metro'},METRO:{i:'🚇',l:'Metro'},
+  SUBURBAN:{i:'🚆',l:'Příměstský vlak'},RAIL:{i:'🚆',l:'Vlak'},
+  HIGHSPEED_RAIL:{i:'🚄',l:'Rychlovlak'},BUS:{i:'🚌',l:'Autobus'},
+  COACH:{i:'🚌',l:'Dálkový autobus'},FERRY:{i:'⛴',l:'Přívoz'},
+  FUNICULAR:{i:'🚞',l:'Lanovka'},AERIAL_LIFT:{i:'🚡',l:'Lanovka'},
+  CABLE_CAR:{i:'🚠',l:'Lanovka'},ODM:{i:'🚐',l:'Na zavolání'},FLEX:{i:'🚐',l:'Linka na zavolání'},
+};
+const mi=m=>MI[m]||{i:'•',l:'Spoj'};
+
+/* ─── GEOCODE ─── */
+function parsePl(it){
+  let lat=it.lat??it.latitude,lon=it.lon??it.lng??it.longitude,name=it.name??it.label;
+  if((lat==null||lon==null)&&it.geometry?.coordinates){lon=it.geometry.coordinates[0];lat=it.geometry.coordinates[1];}
+  if(name==null&&it.properties)name=it.properties.name??it.properties.label;
+  if(lat==null||lon==null)return null;
+  return{name:name||`${(+lat).toFixed(4)},${(+lon).toFixed(4)}`,lat:+lat,lon:+lon};
+}
+async function geocode(q){
+  if(geoAbort)geoAbort.abort();
+  geoAbort=new AbortController();
+  const m=q.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+  if(m)return[{name:q.trim(),lat:+m[1],lon:+m[2]}];
+  try{
+    const d=await fetchJson(`${API}/api/v1/geocode?text=${encodeURIComponent(q)}&language=cs`,{signal:geoAbort.signal});
+    return(Array.isArray(d)?d:(d.results||d.items||d.features||[])).map(parsePl).filter(Boolean).slice(0,8);
+  }catch{return [];}
+}
+async function revG(lat,lon){
+  try{
+    const d=await fetchJson(`${API}/api/v1/reverse-geocode?place=${lat},${lon}`);
+    const results = (Array.isArray(d)?d:(d.results||d.items||d.features||[]));
+    const best = results.map(parsePl).filter(Boolean)[0];
+    if(best) return best;
+  }catch(e){}
+  return { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, lat, lon };
+}
+
+/* ─── USER LOCATION ─── */
+function getUserLocation(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { userPos = { lat: pos.coords.latitude, lon: pos.coords.longitude }; },
+    (err) => {},
+    { enableHighAccuracy: false, timeout: 5000 }
+  );
+}
+
+/* ─── SEARCH SUGGESTIONS ─── */
+const searchInput = document.getElementById('search-input');
+const searchSugg = document.getElementById('search-sugg');
+
+function formatDist(place){
+  if(!userPos) return '';
+  const distKm = haversineKm(userPos.lat, userPos.lon, place.lat, place.lon);
+  if(distKm < 1) return `${(distKm*1000).toFixed(0)} m`;
+  return `${distKm.toFixed(1)} km`;
+}
+
+const suggestPlaces = dbc(async (query) => {
+  if(!query.trim()){ searchSugg.hidden = true; return; }
+  const results = await geocode(query.trim());
+  if(!results.length){ searchSugg.hidden = true; return; }
+  searchSugg.innerHTML = '';
+  results.slice(0,5).forEach(pl => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const distStr = formatDist(pl);
+    btn.innerHTML = `${esc(pl.name)}${distStr ? ` <span class="sugg-dist">· ${distStr}</span>` : ''}`;
+    btn.addEventListener('click', () => {
+      selectSearchResult(pl);
+      searchSugg.hidden = true;
+      searchInput.value = pl.name;
+    });
+    searchSugg.appendChild(btn);
+  });
+  searchSugg.hidden = false;
+}, 250);
+
+searchInput.addEventListener('input', () => suggestPlaces(searchInput.value));
+searchInput.addEventListener('focus', () => { if(searchInput.value.trim()) suggestPlaces(searchInput.value); });
+searchInput.addEventListener('blur', () => setTimeout(() => searchSugg.hidden = true, 150));
+
+function selectSearchResult(place){
+  map.flyTo({center:[place.lon, place.lat], zoom:14});
+  if(tempMarker) tempMarker.remove();
+  const el = document.createElement('div');
+  el.innerHTML = '📍'; el.style.fontSize = '24px';
+  tempMarker = new maplibregl.Marker({element: el}).setLngLat([place.lon, place.lat]).addTo(map);
+  tempMarkerData = place;
+  const popupContent = document.createElement('div');
+  popupContent.innerHTML = `<strong>${esc(place.name)}</strong><br><button id="add-search-result-btn">➕ Přidat do trasy</button>`;
+  popupContent.querySelector('#add-search-result-btn').addEventListener('click', () => {
+    addWp(tempMarkerData);
+    if(tempMarker) { tempMarker.remove(); tempMarker = null; }
+    tempMarkerData = null;
+    const popups = document.querySelectorAll('.maplibregl-popup');
+    popups.forEach(p => p.remove());
+  });
+  new maplibregl.Popup({closeOnClick:true, className:'temp-marker-popup'})
+    .setLngLat([place.lon, place.lat])
+    .setDOMContent(popupContent)
+    .addTo(map);
+}
+
+/* ─── SEARCH BUTTON ─── */
+document.getElementById('search-btn').addEventListener('click', ()=>{
+  const q = searchInput.value.trim();
+  if(!q) return;
+  setStatus('Hledám…');
+  geocode(q).then(results => {
+    setStatus('');
+    if(!results.length){ alert('Nic nenalezeno.'); return; }
+    selectSearchResult(results[0]);
+  }).catch(err => setStatus(err.message, true));
+});
+
+/* ─── MAP ─── */
+function switchMapStyle(styleName){
+  if(!map) return;
+  currentMapStyle = styleName;
+  const styleDef = MAP_STYLES[styleName].style;
+  map.setStyle(styleDef);
+  map.once('style.load', ()=>{
+    clearRtLayers();
+    drawSegs();
+    map.on('click', onMapClick);
+    map.on('click', 'rt-tr', onTransitLineClick);
+    map.on('click', 'rt-walk', onWalkLineClick);
+  });
+}
+
+function initMap(){
+  map = new maplibregl.Map({
+    container: 'map',
+    style: MAP_STYLES['topo'].style,
+    center: [15.47, 49.82],
+    zoom: 6.5,
+    pixelRatio: 1
+  });
+  map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
+  map.on('click', onMapClick);
+  map.on('click', 'rt-tr', onTransitLineClick);
+  map.on('click', 'rt-walk', onWalkLineClick);
+}
+
+document.querySelectorAll('#map-switcher button').forEach(btn => {
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#map-switcher button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    switchMapStyle(btn.dataset.style);
+  });
+});
+
+/* ─── CURRENT LOCATION ─── */
+document.getElementById('loc-btn').addEventListener('click', ()=>{
+  if(!navigator.geolocation){ setStatus('Geolokace není podporována.', true); return; }
+  setStatus('Zjišťuji polohu…', false);
+  navigator.geolocation.getCurrentPosition(
+    (pos)=>{
+      const {latitude, longitude} = pos.coords;
+      userPos = { lat: latitude, lon: longitude };
+      setStatus('', false);
+      if(wps.length === 0){
+        addWp({name:'Moje poloha', lat: latitude, lon: longitude});
+      } else {
+        wps.unshift({id: ++wpIdCnt, name:'Moje poloha', lat: latitude, lon: longitude, dwell:0});
+        segModes.unshift('WALK');
+        renderWpRail();
+        mkMarker(wps[0].id, latitude, longitude, 0);
+        recolorMarkers();
+        if(wps.length>=2) planRoute();
+      }
+    },
+    (err)=>{ setStatus('Nepodařilo se získat polohu: '+err.message, true); },
+    {enableHighAccuracy: true, timeout: 10000}
+  );
+});
+
+/* ─── MAP CLICK ─── */
+function onMapClick(e){
+  if(wps.length>=MAX_WP){setStatus('Maximum je '+MAX_WP+' bodů.',false);return;}
+  const{lat,lng}=e.lngLat;
+  const tempId = ++wpIdCnt;
+  const fallbackName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  wps.push({id: tempId, name: fallbackName, lat, lon: lng, dwell:0});
+  segModes.push('WALK');
+  renderWpRail();
+  mkMarker(tempId, lat, lng, wps.length-1);
+  document.getElementById('clear-btn').classList.add('show');
+  updateHint();
+  if(wps.length>=2) planRoute();
+  setStatus('Zjišťuji název…', false);
+  revG(lat, lng).then(p => {
+    const wp = wps.find(w => w.id === tempId);
+    if(wp){
+      wp.name = p.name || fallbackName;
+      const inp = document.getElementById('wpi-'+tempId);
+      if(inp) inp.value = wp.name;
+    }
+    setStatus('', false);
+  }).catch(() => { setStatus('', false); });
+}
+
+/* ─── WAYPOINTS ─── */
+function addWp(place){
+  const id=++wpIdCnt;
+  wps.push({id,name:place.name||'',lat:place.lat,lon:place.lon,dwell:0});
+  segModes.push('WALK');
+  renderWpRail();
+  if(place.lat&&place.lon) mkMarker(id,place.lat,place.lon,wps.length-1);
+  document.getElementById('clear-btn').classList.add('show');
+  updateHint();
+  if(wps.length>=2) planRoute();
+}
+
+function removeWp(id){
+  const idx=wps.findIndex(w=>w.id===id);
+  if(idx<0)return;
+  wps.splice(idx,1);
+  if(idx>0) segModes.splice(idx-1,1);
+  else segModes.splice(0,1);
+  if(mkrs[id]){mkrs[id].remove();delete mkrs[id];}
+  recolorMarkers();
+  renderWpRail();
+  if(wps.length<2){clearRtLayers();segs=[];renderResults();}
+  else planRoute();
+  if(!wps.length)document.getElementById('clear-btn').classList.remove('show');
+  updateHint();
+}
+
+/* ─── DRAG & DROP WAYPOINTS ─── */
+function handleDragStart(e, idx){ dragSrcIdx = idx; e.dataTransfer.effectAllowed = 'move'; e.currentTarget.style.opacity = '0.4'; }
+function handleDragEnd(e){ e.currentTarget.style.opacity = '1'; document.querySelectorAll('.wp-row').forEach(r => r.classList.remove('drag-over')); dragSrcIdx = -1; }
+function handleDragOver(e, idx){ e.preventDefault(); if(idx !== dragSrcIdx) e.currentTarget.classList.add('drag-over'); }
+function handleDragLeave(e){ e.currentTarget.classList.remove('drag-over'); }
+function handleDrop(e, targetIdx){
+  e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drag-over');
+  if(dragSrcIdx < 0 || dragSrcIdx === targetIdx) return;
+  const moved = wps.splice(dragSrcIdx, 1)[0];
+  wps.splice(targetIdx, 0, moved);
+  segModes = Array(wps.length-1).fill('WALK');
+  Object.values(mkrs).forEach(m=>m.remove()); mkrs={};
+  wps.forEach((w,i)=> mkMarker(w.id, w.lat, w.lon, i));
+  renderWpRail();
+  if(wps.length>=2) planRoute();
+}
+
+function mkMarker(wpId,lat,lon,idx){
+  const total=wps.length;
+  const cls=idx===0?'dot-s':idx===total-1?'dot-e':'dot-m';
+  const el=document.createElement('div'); el.style.cssText='width:28px;height:28px;';
+  const dot=document.createElement('div'); dot.setAttribute('data-mkr',wpId);
+  dot.style.cssText=`width:28px;height:28px;border-radius:50%;background:${cls==='dot-s'?'#2E7D5B':cls==='dot-e'?'#C44536':'#2B4C7E'};border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;color:#fff;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px;cursor:grab;user-select:none;`;
+  dot.textContent=idx+1; el.appendChild(dot);
+  const mkr=new maplibregl.Marker({element:el,draggable:true}).setLngLat([lon,lat]).addTo(map);
+  mkr.on('dragend',async()=>{
+    const ll=mkr.getLngLat(); const wp=wps.find(w=>w.id===wpId); if(!wp) return;
+    wp.lat=ll.lat; wp.lon=ll.lng;
+    setStatus('Aktualizuji název…', false);
+    revG(ll.lat, ll.lng).then(p => { wp.name = p.name; const inp=document.getElementById('wpi-'+wpId); if(inp) inp.value=p.name; setStatus('',false); }).catch(()=>setStatus('',false));
+    if(wps.length>=2) planRoute();
+  });
+  mkrs[wpId]=mkr;
+}
+
+function recolorMarkers(){
+  wps.forEach((w,i)=>{
+    const el=mkrs[w.id]?.getElement()?.querySelector('[data-mkr]'); if(!el)return;
+    const cls=i===0?'dot-s':i===wps.length-1?'dot-e':'dot-m';
+    el.style.background=cls==='dot-s'?'#2E7D5B':cls==='dot-e'?'#C44536':'#2B4C7E'; el.textContent=i+1;
+  });
+}
+
+/* ─── RENDER RAIL ─── */
+function renderWpRail(){
+  const rail = document.getElementById('wp-rail');
+  rail.innerHTML = '';
+  const n = wps.length;
+  wps.forEach((wp, idx) => {
+    const row = document.createElement('div');
+    row.className = 'wp-row' + (idx===n-1?' wp-last':'');
+    row.draggable = true;
+    row.addEventListener('dragstart',(e)=>handleDragStart(e,idx));
+    row.addEventListener('dragend',handleDragEnd);
+    row.addEventListener('dragover',(e)=>handleDragOver(e,idx));
+    row.addEventListener('dragleave',handleDragLeave);
+    row.addEventListener('drop',(e)=>handleDrop(e,idx));
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.className = 'wp-chk';
+    chk.dataset.idx = idx;
+    chk.addEventListener('change', updateBulkBar);
+    row.appendChild(chk);
+
+    const dot = document.createElement('div');
+    dot.className = 'wp-dot ' + (idx===0?'dot-s':idx===n-1?'dot-e':'dot-m');
+    dot.textContent = idx+1;
+
+    const field = document.createElement('div');
+    field.className = 'wp-field';
+    const lbl = document.createElement('div');
+    lbl.className = 'wp-lbl';
+    lbl.textContent = idx===0?'Výchozí bod':idx===n-1?'Cíl':'Zastávka '+(idx+1);
+    const wrap = document.createElement('div');
+    wrap.className = 'wp-inp-wrap';
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.className = 'wp-inp'; inp.id = 'wpi-'+wp.id;
+    inp.value = wp.name; inp.autocomplete = 'off'; inp.placeholder = 'Hledej místo…';
+    const sugg = document.createElement('div');
+    sugg.className = 'wp-sugg'; sugg.id = 'wps-'+wp.id; sugg.hidden = true;
+    const doSearch = dbc(async()=>{
+      const res = await geocode(inp.value);
+      sugg.innerHTML = '';
+      if(!res.length){sugg.hidden=true;return;}
+      res.forEach(pl=>{
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = pl.name;
+        b.addEventListener('click',()=>{
+          inp.value = pl.name; sugg.hidden = true;
+          const w = wps.find(x=>x.id===wp.id);
+          if(w){w.name=pl.name; w.lat=pl.lat; w.lon=pl.lon;}
+          if(mkrs[wp.id]) mkrs[wp.id].setLngLat([pl.lon, pl.lat]);
+          else mkMarker(wp.id, pl.lat, pl.lon, idx);
+          map.flyTo({center:[pl.lon, pl.lat], zoom:Math.max(map.getZoom(),12), duration:600});
+          if(wps.length>=2) planRoute();
+        });
+        sugg.appendChild(b);
+      });
+      sugg.hidden = false;
+    },300);
+    inp.addEventListener('input',()=>{const w=wps.find(x=>x.id===wp.id);if(w)w.name=inp.value;doSearch();});
+    inp.addEventListener('blur',()=>setTimeout(()=>{sugg.hidden=true;},180));
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'wp-del'; del.innerHTML = '×'; del.title = 'Odebrat bod';
+    del.addEventListener('click',(e)=>{e.stopPropagation(); removeWp(wp.id);});
+    wrap.appendChild(inp); wrap.appendChild(sugg); wrap.appendChild(del);
+    field.appendChild(lbl); field.appendChild(wrap);
+
+    if(idx>0 && idx<n-1){
+      const dwellWrap = document.createElement('div');
+      dwellWrap.className = 'dwell-wrap';
+      const dwellLbl = document.createElement('label');
+      dwellLbl.textContent = '⏱ Zdržení (min)';
+      const dwellInp = document.createElement('input');
+      dwellInp.type = 'number'; dwellInp.min = '0'; dwellInp.max = '999'; dwellInp.value = wp.dwell||0;
+      dwellInp.addEventListener('input',()=>{const w=wps.find(x=>x.id===wp.id);if(w)w.dwell=parseInt(dwellInp.value,10)||0;});
+      dwellWrap.appendChild(dwellLbl); dwellWrap.appendChild(dwellInp);
+      field.appendChild(dwellWrap);
+    }
+
+    row.appendChild(dot);
+    row.appendChild(field);
+    rail.appendChild(row);
+
+    if(idx < n-1){
+      const segRow = document.createElement('div');
+      segRow.className = 'seg-mode-row';
+      segRow.dataset.segIdx = idx;
+
+      const btnWalk = document.createElement('button');
+      btnWalk.className = 'seg-mode-btn' + (segModes[idx]==='WALK'?' active':'');
+      btnWalk.innerHTML = '🚶‍♂️'; btnWalk.title = 'Chůze';
+      btnWalk.addEventListener('click', ()=>{ setSegMode(idx, 'WALK', segRow); });
+      const btnTransit = document.createElement('button');
+      btnTransit.className = 'seg-mode-btn' + (segModes[idx]==='TRANSIT'?' active':'');
+      btnTransit.innerHTML = '🚌'; btnTransit.title = 'MHD';
+      btnTransit.addEventListener('click', ()=>{ setSegMode(idx, 'TRANSIT', segRow); });
+      const btnBike = document.createElement('button');
+      btnBike.className = 'seg-mode-btn' + (segModes[idx]==='BICYCLE'?' active':'');
+      btnBike.innerHTML = '🚲'; btnBike.title = 'Kolo';
+      btnBike.addEventListener('click', ()=>{ setSegMode(idx, 'BICYCLE', segRow); });
+
+      const speedInp = document.createElement('input');
+      speedInp.type = 'number';
+      speedInp.className = 'seg-speed-inp';
+      speedInp.value = segModes[idx]==='WALK'?walkSpeed:segModes[idx]==='BICYCLE'?bikeSpeed:'';
+      speedInp.disabled = segModes[idx]==='TRANSIT';
+      speedInp.addEventListener('input', ()=>{
+        const val = parseFloat(speedInp.value);
+        if(segModes[idx]==='WALK') walkSpeed = val||5;
+        else if(segModes[idx]==='BICYCLE') bikeSpeed = val||15;
+        document.getElementById('walkSpeed').value = walkSpeed;
+        document.getElementById('bikeSpeed').value = bikeSpeed;
+        planSegment(idx);
+      });
+
+      segRow.appendChild(btnWalk);
+      segRow.appendChild(btnTransit);
+      segRow.appendChild(btnBike);
+      segRow.appendChild(speedInp);
+      rail.appendChild(segRow);
+    }
+  });
+
+  document.getElementById('add-btn').style.display = wps.length>=MAX_WP?'none':'flex';
+  recolorMarkers();
+  updateBulkBar();
+}
+
+function setSegMode(idx, mode, row){
+  segModes[idx] = mode;
+  row.querySelectorAll('.seg-mode-btn').forEach(b => b.classList.remove('active'));
+  row.querySelector('.seg-mode-btn:nth-child('+(mode==='WALK'?1:mode==='TRANSIT'?2:3)+')').classList.add('active');
+  const sp = row.querySelector('.seg-speed-inp');
+  if(mode==='WALK') sp.value = walkSpeed;
+  else if(mode==='BICYCLE') sp.value = bikeSpeed;
+  else sp.value = '';
+  sp.disabled = (mode==='TRANSIT');
+  planSegment(idx);
+}
+
+function updateBulkBar(){
+  const checked = [...document.querySelectorAll('.wp-chk:checked')].map(c=>parseInt(c.dataset.idx));
+  const bar = document.getElementById('bulk-bar');
+  if(checked.length === 0) bar.style.display = 'none';
+  else {
+    bar.style.display = 'flex';
+    bar.querySelector('#bulk-dwell-btn').onclick = ()=>{
+      const mins = prompt('Zadejte zdržení (minuty) pro vybrané zastávky:');
+      if(mins === null) return;
+      const val = parseInt(mins,10)||0;
+      checked.forEach(i => { if(i>0 && i<wps.length-1) wps[i].dwell = val; });
+      renderWpRail();
+      if(wps.length>=2) planRoute();
+    };
+    bar.querySelector('#bulk-mode-walk').onclick = ()=>{ applyBulkMode(checked, 'WALK'); };
+    bar.querySelector('#bulk-mode-transit').onclick = ()=>{ applyBulkMode(checked, 'TRANSIT'); };
+    bar.querySelector('#bulk-mode-bike').onclick = ()=>{ applyBulkMode(checked, 'BICYCLE'); };
+  }
+}
+function applyBulkMode(indices, mode){
+  indices.forEach(i => { if(i < wps.length-1) segModes[i] = mode; });
+  renderWpRail();
+  if(wps.length>=2) planRoute();
+}
+
+document.getElementById('walkSpeed').addEventListener('input', function(){ walkSpeed=parseFloat(this.value)||5;
+  document.querySelectorAll('.seg-mode-row').forEach(row=>{ const sp=row.querySelector('.seg-speed-inp'); if(row.querySelector('.seg-mode-btn.active')?.title==='Chůze') sp.value=walkSpeed; });
+});
+document.getElementById('bikeSpeed').addEventListener('input', function(){ bikeSpeed=parseFloat(this.value)||15;
+  document.querySelectorAll('.seg-mode-row').forEach(row=>{ const sp=row.querySelector('.seg-speed-inp'); if(row.querySelector('.seg-mode-btn.active')?.title==='Kolo') sp.value=bikeSpeed; });
+});
+
+document.getElementById('add-btn').addEventListener('click',()=>{ const last=wps[wps.length-1]; addWp({name:'',lat:last?.lat||49.82,lon:last?.lon||15.47}); setTimeout(()=>{const ins=document.querySelectorAll('.wp-inp');if(ins.length)ins[ins.length-1].focus();},40); });
+document.getElementById('clear-btn').addEventListener('click',()=>{ Object.values(mkrs).forEach(m=>m.remove()); mkrs={};wps=[];segs=[];segModes=[];wpIdCnt=0; clearRtLayers();renderWpRail();renderResults(); document.getElementById('clear-btn').classList.remove('show'); updateHint();setStatus('',false); });
+
+/* ─── POLYLINE / LAYERS (vylepšená viditelnost) ─── */
+function decPoly(enc,prec){ const f=Math.pow(10,prec||6); let i=0,lat=0,lng=0; const c=[]; while(i<enc.length){ let r=1,s=0,b; do{b=enc.charCodeAt(i++)-63-1;r+=b<<s;s+=5;}while(b>=0x1f); lat+=(r&1)?~(r>>1):(r>>1);r=1;s=0; do{b=enc.charCodeAt(i++)-63-1;r+=b<<s;s+=5;}while(b>=0x1f); lng+=(r&1)?~(r>>1):(r>>1);c.push([lng/f,lat/f]); } return c; }
+function clearRtLayers(){ if(!map||!map.isStyleLoaded())return; rtLayers.forEach(id=>{if(map.getLayer(id))map.removeLayer(id);if(map.getSource(id))map.removeSource(id);}); rtLayers.clear(); }
+
+function drawSegs(){
+  if(!map)return;
+  const go=()=>{
+    clearRtLayers();
+    const wkF=[],trF=[];
+    segs.forEach((seg,segIdx)=>{
+      if(!seg?.itin)return;
+      (seg.itin.legs||[]).forEach(leg=>{
+        let coords = [];
+        if(leg.legGeometry?.points){
+          coords = decPoly(leg.legGeometry.points,6);
+        }
+        if(!coords.length && leg.from?.lat && leg.from?.lon && leg.to?.lat && leg.to?.lon){
+          coords = [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]];
+        }
+        if(!coords.length && seg.from?.lat && seg.from?.lon && seg.to?.lat && seg.to?.lon){
+          coords = [[seg.from.lon, seg.from.lat], [seg.to.lon, seg.to.lat]];
+        }
+        if(!coords.length) return;
+        const feat={type:'Feature',geometry:{type:'LineString',coordinates:coords},properties:{segIndex:segIdx}};
+        if(isWalk(leg.mode)||isBike(leg.mode)) wkF.push(feat); else trF.push(feat);
+      });
+    });
+    if(wkF.length){
+      const walkSourceId = 'rt-walk';
+      map.addSource(walkSourceId,{type:'geojson',data:{type:'FeatureCollection',features:wkF}});
+      map.addLayer({
+        id: 'rt-walk-outline',
+        type: 'line',
+        source: walkSourceId,
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 7,
+          'line-opacity': 0.9
+        }
+      });
+      rtLayers.add('rt-walk-outline');
+      map.addLayer({
+        id: walkSourceId,
+        type: 'line',
+        source: walkSourceId,
+        paint: {
+          'line-color': '#2E7D5B',
+          'line-width': 4,
+          'line-dasharray': [2.5, 2]
+        }
+      });
+      rtLayers.add(walkSourceId);
+    }
+    if(trF.length){
+      const transitSourceId = 'rt-tr';
+      map.addSource(transitSourceId,{type:'geojson',data:{type:'FeatureCollection',features:trF}});
+      map.addLayer({
+        id: transitSourceId,
+        type: 'line',
+        source: transitSourceId,
+        paint: {
+          'line-color': '#2B4C7E',
+          'line-width': 5
+        }
+      });
+      rtLayers.add(transitSourceId);
+    }
+  };
+  if(map.isStyleLoaded())go();else map.once('load',go);
+}
+
+function onTransitLineClick(e){ if(!e.features.length)return; showPopup(e.lngLat, e.features[0].properties.segIndex); }
+function onWalkLineClick(e){ if(!e.features.length)return; showPopup(e.lngLat, e.features[0].properties.segIndex); }
+function showPopup(lngLat, segIdx){
+  const mode=segModes[segIdx]||'WALK';
+  const popup = new maplibregl.Popup({closeOnClick:true,offset:10})
+    .setLngLat(lngLat)
+    .setHTML(`
+      <div>
+        <select class="popup-select" id="popup-mode-${segIdx}">
+          <option value="WALK" ${mode==='WALK'?'selected':''}>🚶‍♂️ Chůze</option>
+          <option value="TRANSIT" ${mode==='TRANSIT'?'selected':''}>🚌 MHD</option>
+          <option value="BICYCLE" ${mode==='BICYCLE'?'selected':''}>🚲 Kolo</option>
+        </select>
+        <div class="popup-speed" id="popup-speed-${segIdx}" style="display:${mode==='TRANSIT'?'none':'flex'}">
+          Rychlost: <input type="number" id="popup-spd-${segIdx}" value="${mode==='WALK'?walkSpeed:mode==='BICYCLE'?bikeSpeed:''}" min="1" max="40" step="0.5"> km/h
+        </div>
+        <button style="margin-top:6px;width:100%;padding:5px;border-radius:6px;border:1px solid var(--ink);background:var(--ink);color:var(--amber);font-family:var(--fd);font-weight:700;">Použít</button>
+      </div>
+    `)
+    .addTo(map);
+  setTimeout(()=>{
+    const sel=document.getElementById(`popup-mode-${segIdx}`);
+    const spd=document.getElementById(`popup-speed-${segIdx}`);
+    const spdInp=document.getElementById(`popup-spd-${segIdx}`);
+    if(sel){
+      sel.addEventListener('change',()=>{
+        spd.style.display=(sel.value==='TRANSIT'?'none':'flex');
+        if(sel.value==='WALK') spdInp.value=walkSpeed;
+        else if(sel.value==='BICYCLE') spdInp.value=bikeSpeed;
+      });
+      sel.parentElement.querySelector('button').addEventListener('click',()=>{
+        const newMode=sel.value;
+        segModes[segIdx]=newMode;
+        if(newMode==='WALK') walkSpeed=parseFloat(spdInp.value)||5;
+        else if(newMode==='BICYCLE') bikeSpeed=parseFloat(spdInp.value)||15;
+        document.getElementById('walkSpeed').value=walkSpeed;
+        document.getElementById('bikeSpeed').value=bikeSpeed;
+        popup.remove();
+        renderWpRail();
+        planSegment(segIdx);
+      });
+    }
+  },50);
+}
+
+/* ─── PLANNING ─── */
+function haversineKm(lat1,lon1,lat2,lon2){ const R=6371; const dLat=(lat2-lat1)*Math.PI/180; const dLon=(lon2-lon1)*Math.PI/180; const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2; return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
+
+async function fetchOsrmRoute(fr, to, profile){
+  const footProfile = profile === 'foot' ? 'foot' : 'bike';
+  const coords = `${fr.lon},${fr.lat};${to.lon},${to.lat}`;
+  for (const base of OSRM_SERVERS) {
+    try {
+      const url = `${base}/${footProfile}/${coords}?overview=full&geometries=geojson&steps=false`;
+      const resp = await fetch(url);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (data.code !== 'Ok' || !data.routes?.length) continue;
+      const route = data.routes[0];
+      const geom = route.geometry?.coordinates;
+      if (!geom?.length) continue;
+      const polyline = encodePolyline(geom.map(c => [c[1], c[0]]));
+      return { geometry: polyline, duration: route.duration, distance: route.distance };
+    } catch (e) { }
+  }
+  return null;
+}
+
+function encodePolyline(coords){
+  let prevLat = 0, prevLng = 0;
+  let result = '';
+  for(const [lat, lng] of coords){
+    const dLat = Math.round(lat * 1e6) - Math.round(prevLat * 1e6);
+    const dLng = Math.round(lng * 1e6) - Math.round(prevLng * 1e6);
+    result += encodeNumber(dLat) + encodeNumber(dLng);
+    prevLat = lat; prevLng = lng;
+  }
+  return result;
+}
+function encodeNumber(num){
+  let value = num < 0 ? ~(num << 1) : num << 1;
+  let str = '';
+  while(value >= 0x20){
+    str += String.fromCharCode((0x20 | (value & 0x1f)) + 63);
+    value >>= 5;
+  }
+  str += String.fromCharCode(value + 63);
+  return str;
+}
+
+async function createWalkingItinerary(fr, to, mode, speedKmh, startTimeISO){
+  const profile = mode==='WALK'?'foot':'bike';
+  const osrm = await fetchOsrmRoute(fr, to, profile);
+  let distKm, durSec, geometryPoints;
+  if(osrm){
+    distKm = osrm.distance/1000;
+    durSec = (distKm / speedKmh) * 3600;
+    geometryPoints = osrm.geometry;
+  } else {
+    distKm = haversineKm(fr.lat, fr.lon, to.lat, to.lon);
+    durSec = (distKm / speedKmh) * 3600;
+    geometryPoints = '';
+  }
+  const start = new Date(startTimeISO);
+  const end = new Date(start.getTime() + durSec*1000);
+  return {
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+    duration: Math.round(durSec),
+    transfers: 0,
+    legs: [{
+      mode: mode,
+      startTime: start.toISOString(),
+      endTime: end.toISOString(),
+      duration: Math.round(durSec),
+      from: { name: fr.name, lat: fr.lat, lon: fr.lon },
+      to: { name: to.name, lat: to.lat, lon: to.lon },
+      legGeometry: { points: geometryPoints },
+      routeShortName: '',
+      headsign: '',
+      realTime: false
+    }]
+  };
+}
+
+async function planSegment(startIdx){
+  if(planning)return; const valid=wps.filter(w=>w.lat&&w.lon); if(valid.length<2)return; planning=true;
+  const btn=document.getElementById('plan-btn'); btn.disabled=true; setStatus('Přepočítávám úseky od '+(startIdx+1)+'…',false);
+  let curTime; if(startIdx===0){ curTime=iso(document.getElementById('when').value)||toISOWithOffset(new Date()); arriveBy=false; }
+  else{ if(segs[startIdx-1]?.itin?.endTime){ const prevEnd=new Date(segs[startIdx-1].itin.endTime); const dwell=valid[startIdx]?.dwell||0; prevEnd.setMinutes(prevEnd.getMinutes()+dwell); curTime=toISOWithOffset(prevEnd); } else curTime=iso(document.getElementById('when').value)||toISOWithOffset(new Date()); }
+  let useArriveBy=(startIdx===0?arriveBy:false); segs=segs.slice(0,startIdx); clearRtLayers();
+  try{
+    for(let i=startIdx;i<valid.length-1;i++){
+      const fr=valid[i], to=valid[i+1]; const mode=segModes[i]||'WALK';
+      if(mode==='WALK' || mode==='BICYCLE'){
+        const speed = mode==='WALK'?walkSpeed:bikeSpeed;
+        const itinerary = await createWalkingItinerary(fr, to, mode, speed, curTime);
+        segs.push({from:fr, to, itin:itinerary, mode});
+      } else {
+        const p=new URLSearchParams({ fromPlace:`${fr.lat},${fr.lon}`, toPlace:`${to.lat},${to.lon}`, time:curTime, arriveBy:useArriveBy?'true':'false', mode:'TRANSIT', numItineraries:'3', detailedLegs:'true' });
+        const data=await fetchJson(`${API}/api/v6/plan?${p}`);
+        if(!data.itineraries?.length) throw new Error(`Úsek ${fr.name||i+1}→${to.name||i+2}: žádné spojení nenalezeno.`);
+        segs.push({from:fr, to, itin:data.itineraries[0], mode:'TRANSIT'});
+      }
+      const lastLeg = segs[segs.length-1].itin.legs?.[segs[segs.length-1].itin.legs.length-1];
+      const targetMs = segs[segs.length-1].itin.endTime || lastLeg?.endTime;
+      if(!targetMs) throw new Error(`Chybí čas příjezdu pro úsek ${i+1}.`);
+      const nextDate = new Date(targetMs);
+      const dwell = valid[i+1]?.dwell||0;
+      nextDate.setMinutes(nextDate.getMinutes()+dwell);
+      curTime = toISOWithOffset(nextDate);
+      useArriveBy = false;
+    }
+    setStatus('Trasa úspěšně přepočítána.',false); drawSegs(); renderResults();
+  }catch(err){ setStatus(err.message,true); }
+  finally{ btn.disabled=false; planning=false; }
+}
+
+async function planRoute(){ planSegment(0); }
+
+document.getElementById('tdep').addEventListener('click',()=>{arriveBy=false;document.getElementById('tdep').classList.add('on');document.getElementById('tarr').classList.remove('on');});
+document.getElementById('tarr').addEventListener('click',()=>{arriveBy=true;document.getElementById('tarr').classList.add('on');document.getElementById('tdep').classList.remove('on');});
+document.getElementById('plan-btn').addEventListener('click',planRoute);
+
+/* ─── RENDER RESULTS ─── */
+function computeLegStats(itin){
+  let walkMin=0, transitMin=0, waitMin=0; let totalDistKm=0;
+  const legs=itin.legs||[];
+  let prevEnd=null;
+  legs.forEach(leg=>{
+    const durMin = leg.duration ? (leg.duration/60) : minBetween(leg.startTime, leg.endTime);
+    if(isWalk(leg.mode)||isBike(leg.mode)){
+      walkMin += durMin;
+      if(leg.legGeometry?.points){
+        const coords=decPoly(leg.legGeometry.points,6);
+        for(let j=1;j<coords.length;j++) totalDistKm += haversineKm(coords[j-1][1],coords[j-1][0],coords[j][1],coords[j][0]);
+      } else if(leg.from?.lat && leg.from?.lon && leg.to?.lat && leg.to?.lon){
+        totalDistKm += haversineKm(leg.from.lat, leg.from.lon, leg.to.lat, leg.to.lon);
+      }
+    } else { transitMin += durMin; }
+    if(prevEnd){ const gap = minBetween(prevEnd, leg.startTime); if(gap>0) waitMin += gap; }
+    prevEnd = leg.endTime;
+  });
+  return { walkMin, transitMin, waitMin, distKm: totalDistKm };
+}
+
+function renderResults(){
+  const el=document.getElementById('results');
+  if(!segs.length){ el.innerHTML=`<div class="empty"><span class="big">🗺</span>Klikej do mapy pro přidání bodů.</div>`; return; }
+
+  let totalWalkMin=0, totalTransitMin=0, totalWaitMin=0, totalDwellMin=0, totalDistKm=0;
+  let overallStart=null, overallEnd=null;
+  segs.forEach((seg,i)=>{
+    if(!seg?.itin)return; const s=computeLegStats(seg.itin);
+    totalWalkMin += s.walkMin; totalTransitMin += s.transitMin; totalWaitMin += s.waitMin; totalDistKm += s.distKm;
+    if(i<segs.length-1){ const wp=wps[i+1]; if(wp) totalDwellMin += (wp.dwell||0); }
+    if(!overallStart) overallStart=seg.itin.startTime; overallEnd=seg.itin.endTime;
+  });
+  const totalMin = totalWalkMin + totalTransitMin + totalWaitMin + totalDwellMin;
+
+  const el2=document.createElement('div'); el2.innerHTML='<div class="r-head">Nalezená trasa</div>';
+  const sum=document.createElement('div'); sum.className='sum-card';
+  sum.innerHTML=`
+    <div class="sum-times">${fmtT(overallStart)} <span class="arr">→</span> ${fmtT(overallEnd)}</div>
+    <div class="pbar">
+      <div class="pb-walk" style="flex:${totalWalkMin}"></div>
+      <div class="pb-transit" style="flex:${totalTransitMin}"></div>
+      <div class="pb-wait" style="flex:${totalWaitMin}"></div>
+      <div class="pb-dwell" style="flex:${totalDwellMin}"></div>
+    </div>
+    <div class="legend">
+      <span><i class="li-w"></i>chůze/kolo ${fmtM(totalWalkMin)}</span>
+      <span><i class="li-t"></i>MHD ${fmtM(totalTransitMin)}</span>
+      <span><i class="li-wt"></i>čekání na spoje ${fmtM(totalWaitMin)}</span>
+      ${totalDwellMin>0?`<span><i class="li-dw"></i>pauzy ${fmtM(totalDwellMin)}</span>`:''}
+      <span>celkem ${fmtM(totalMin)}</span>
+    </div>`;
+  const favBtn=document.createElement('button'); favBtn.type='button'; favBtn.className='fav-btn'; favBtn.textContent='☆ Uložit do oblíbených'; favBtn.addEventListener('click',addFav); sum.appendChild(favBtn); el2.appendChild(sum);
+
+  segs.forEach((seg,i)=>{
+    if(!seg?.itin)return; const itin=seg.itin; const s=computeLegStats(itin);
+    const anyAlert=(itin.legs||[]).some(l=>l.alerts?.length); const anyDelay=(itin.legs||[]).some(l=>{const d=l.departureDelay??l.arrivalDelay;return typeof d==='number'&&Math.abs(d)>=60;});
+    const tr=itin.transfers??Math.max(0,(itin.legs||[]).filter(l=>!isWalk(l.mode)&&!isBike(l.mode)).length-1);
+    const card=document.createElement('div'); card.className='seg-card'; if(i===0)card.classList.add('open');
+    const hd=document.createElement('button'); hd.type='button'; hd.className='seg-hd';
+    hd.innerHTML=`
+      <div class="seg-num">${i+1}</div>
+      <div class="seg-info">
+        <div class="seg-rt">${esc(seg.from.name||'bod '+(i+1))} → ${esc(seg.to.name||'bod '+(i+2))} · ${seg.mode==='WALK'?'🚶‍♂️':seg.mode==='BICYCLE'?'🚲':'🚌'}</div>
+        <div class="seg-tm">${fmtT(itin.startTime)} → ${fmtT(itin.endTime)} · ${fmtM(s.walkMin+s.transitMin+s.waitMin)} ${seg.mode!=='TRANSIT'?'':(`· ${tr} přestup${tr===1?'':tr>=2&&tr<=4?'y':'ů'}`)}</div>
+      </div>
+      ${anyAlert?`<span class="seg-badge sb-alert">⚠</span>`:''} ${anyDelay?`<span class="seg-badge sb-delay">⏱</span>`:''}`;
+    hd.addEventListener('click',()=>card.classList.toggle('open'));
+    const bd=document.createElement('div'); bd.className='seg-body';
+    (itin.legs||[]).forEach((leg, legIdx)=>{
+      const prevLeg=itin.legs[legIdx-1], nextLeg=itin.legs[legIdx+1];
+      const isTransferWalk = isWalk(leg.mode) && prevLeg && !isWalk(prevLeg.mode) && nextLeg && !isWalk(nextLeg.mode) && (leg.duration/60 < 30);
+      const inf=mi(leg.mode); const durMin = leg.duration ? (leg.duration/60) : minBetween(leg.startTime, leg.endTime);
+      const line=leg.routeShortName||leg.headsign||''; const frN=leg.from?.name||'', toN=leg.to?.name||'';
+      const delay=leg.departureDelay??leg.arrivalDelay; const delayMin=typeof delay==='number'?Math.round(delay/60):null;
+      const alerts=(leg.alerts||[]).map(a=>`<div class="alert-box"><b>⚠ ${esc(a.header||a.headerText||'Mimořádnost')}</b>${esc((a.description||a.descriptionText||'').slice(0,160))}</div>`).join('');
+      let distKm = 0;
+      if(isWalk(leg.mode)||isBike(leg.mode)){
+        if(leg.legGeometry?.points){
+          const coords=decPoly(leg.legGeometry.points,6);
+          for(let j=1;j<coords.length;j++) distKm += haversineKm(coords[j-1][1],coords[j-1][0],coords[j][1],coords[j][0]);
+        } else if(leg.from?.lat && leg.from?.lon && leg.to?.lat && leg.to?.lon){
+          distKm = haversineKm(leg.from.lat, leg.from.lon, leg.to.lat, leg.to.lon);
+        }
+      }
+      const legEl=document.createElement('div'); legEl.className='leg '+(isWalk(leg.mode)||isBike(leg.mode)?'lw':'lt'); if(isTransferWalk) legEl.classList.add('transfer');
+      legEl.innerHTML=`
+        <div class="leg-icon">${isTransferWalk?'🚶‍♂️':inf.i}</div>
+        <div class="leg-main">
+          <div class="leg-tt"><span>${isTransferWalk?'Přestup':(isWalk(leg.mode)?'Chůze':isBike(leg.mode)?'Kolo':esc(inf.l+(line?' · '+line:'')))}</span><span class="dur">${fmtM(durMin)}</span></div>
+          <div class="leg-times">${fmtT(leg.startTime)} → ${fmtT(leg.endTime)}</div>
+          ${distKm>0?`<div class="leg-dist">${distKm.toFixed(2)} km</div>`:''}
+          <div class="leg-sub">${esc(frN)} → ${esc(toN)}</div>
+          <div class="leg-bdg">${leg.realTime?'<span class="brt">live</span>':''}${delayMin!==null&&Math.abs(delayMin)>=1?`<span class="bdl">${delayMin>0?'+':''}${delayMin} min</span>`:''}</div>
+          ${alerts}
+        </div>`;
+      bd.appendChild(legEl);
+    });
+    card.appendChild(hd); card.appendChild(bd); el2.appendChild(card);
+  });
+  el.innerHTML=''; el.appendChild(el2);
+}
+
+/* ─── FAVORITES ─── */
+async function addFav(){ if(!wps.length)return; const favs=await sg('favs',[]); const entry={wps:wps.map(w=>({name:w.name,lat:w.lat,lon:w.lon,dwell:w.dwell||0})),modes:[...segModes],walkSpeed,bikeSpeed}; const key=entry.wps.map(w=>w.name).join('→'); if(!favs.find(f=>f.wps.map(w=>w.name).join('→')===key))favs.push(entry); await ss('favs',favs); renderFavs(favs); const btn=document.querySelector('.fav-btn');if(btn){btn.textContent='★ Uloženo';btn.classList.add('on');} }
+function renderFavs(favs){ const el=document.getElementById('favs');el.innerHTML=''; if(!favs?.length)return; const h=document.createElement('div');h.className='fv-head';h.textContent='Oblíbené trasy';el.appendChild(h); favs.forEach((fv,i)=>{ const chip=document.createElement('div');chip.className='fv-chip'; chip.innerHTML=`<span class="fv-star">★</span><span>${esc(fv.wps.map(w=>w.name).join(' → '))}</span>`; const del=document.createElement('button');del.type='button';del.className='fv-del';del.innerHTML='✕'; del.addEventListener('click',async e=>{e.stopPropagation();const f=await sg('favs',[]);f.splice(i,1);await ss('favs',f);renderFavs(f);}); chip.appendChild(del); chip.addEventListener('click',()=>loadFav(fv)); el.appendChild(chip); }); }
+async function loadFav(fv){ Object.values(mkrs).forEach(m=>m.remove());mkrs={};wps=[];segs=[];segModes=[];wpIdCnt=0;clearRtLayers();renderResults(); walkSpeed=fv.walkSpeed||5;bikeSpeed=fv.bikeSpeed||15; document.getElementById('walkSpeed').value=walkSpeed;document.getElementById('bikeSpeed').value=bikeSpeed; fv.wps.forEach(p=>addWp({...p,dwell:p.dwell||0})); if(fv.modes) segModes=fv.modes; renderWpRail();planRoute(); }
+
+/* ─── PANEL TOGGLE ─── */
+document.getElementById('ptoggle').addEventListener('click',()=>{ const p=document.getElementById('panel'); const collapsed=p.classList.toggle('off'); document.getElementById('ptoggle').textContent=collapsed?'▶':'◀'; });
+function updateHint(){ const h=document.getElementById('mhint');if(!h)return; if(!wps.length)h.textContent='Klikni do mapy pro přidání prvního bodu'; else if(wps.length===1)h.textContent='Klikni znovu pro přidání cíle'; else h.textContent=`Trasa přes ${wps.length} body · přetahuj body pro změnu pořadí`; }
+const tick=()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('cs-CZ',{hour:'2-digit',minute:'2-digit'});}; tick();setInterval(tick,30000);
+
+/* ─── INIT ─── */
+(()=>{const e=document.getElementById('when');const n=new Date(Date.now()-new Date().getTimezoneOffset()*60000);e.value=n.toISOString().slice(0,16);})();
+(async()=>{
+  getUserLocation();
+  initMap();
+  renderWpRail();
+  renderResults();
+  updateHint();
+  const favs=await sg('favs',[]);
+  renderFavs(favs);
+  const lastWps=await sg('last-wps',null);
+  if(lastWps?.length>=2) lastWps.forEach(p=>addWp(p));
+})();
+</script>
+</body>
+</html>
